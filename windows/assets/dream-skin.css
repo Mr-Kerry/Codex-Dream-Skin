@@ -505,7 +505,7 @@ html.codex-dream-skin.dream-art-wide  .dream-composer{
   backdrop-filter: none !important;
 }
 
-html.codex-dream-skin.dream-art-wide .composer-surface-chrome::before {
+html.codex-dream-skin.dream-art-wide .dream-composer::before {
   content: none !important;
 }
 
