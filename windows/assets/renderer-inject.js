@@ -326,12 +326,34 @@
     const root = document.documentElement;
     if (!root || !document.body) return;
 
-    const shellMain = document.querySelector("main.main-surface");
-    const shellSidebar = document.querySelector("aside.app-shell-left-panel");
-    if (!shellMain || !shellSidebar) {
+    const shellMain = document.querySelector(
+      "main.main-surface, main, [role='main']"
+    );
+    const shellSidebar = document.querySelector(
+      "aside.app-shell-left-panel, aside, nav[aria-label*='side' i]"
+    );
+    const composer = document.querySelector(
+      ".composer-surface-chrome, textarea, [contenteditable='true']"
+    );
+    
+    if (!shellMain) {
       clearSkinDom();
       return;
     }
+    
+    document.querySelectorAll(".dream-shell-main").forEach((node) => {
+      node.classList.remove("dream-shell-main");
+    });
+    document.querySelectorAll(".dream-shell-sidebar").forEach((node) => {
+      node.classList.remove("dream-shell-sidebar");
+    });
+    document.querySelectorAll(".dream-composer").forEach((node) => {
+      node.classList.remove("dream-composer");
+    });
+    
+    shellMain.classList.add("dream-shell-main");
+    shellSidebar?.classList.add("dream-shell-sidebar");
+    composer?.classList.add("dream-composer");
 
     root.classList.add("codex-dream-skin");
     applyProfile(root);
