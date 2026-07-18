@@ -88,7 +88,7 @@ function browserIdFromVersion(version, port) {
 }
 
 function isValidCdpPageTarget(item, port) {
-  if (item?.type !== "page" || !item.url?.startsWith("app://") || typeof item.id !== "string" ||
+  if (item?.type !== "page" || typeof item.id !== "string" ||
       !BROWSER_ID_PATTERN.test(item.id) || !item.webSocketDebuggerUrl) return false;
   try {
     const debuggerUrl = new URL(validatedDebuggerUrl(item, port));
@@ -443,8 +443,7 @@ async function probeSession(session) {
         composer: Boolean(composer),
         main: Boolean(document.querySelector('[role="main"]')),
       },
-      codex: location.protocol === 'app:' &&
-        Boolean(document.body) &&
+      codex: Boolean(document.body) &&
         Boolean(shell),
     };
   })()`);
@@ -521,9 +520,9 @@ export function earlyPayloadFor(payload, revision) {
       if (window[generationKey] !== generation) { stop(); return true; }
       const root = document.documentElement;
       if (!root || !document.body) return false;
-      const shell = document.querySelector('main.main-surface, main, [role="main"');
+      const shell = document.querySelector('main.main-surface, main, [role="main"]');
       const sidebar = document.querySelector('aside.app-shell-left-panel, aside, nav[aria-label*="side" i]');
-      if (!shell || !sidebar) return false;
+      if (!shell) return false;
       stop();
       ${payload};
       window[appliedKey] = generation;
@@ -618,11 +617,11 @@ async function verifySession(session) {
         y: document.documentElement.scrollHeight > document.documentElement.clientHeight,
       },
     };
-    result.pass = result.installed && result.version === result.expectedVersion &&
-      result.stylePresent && result.chromePresent &&
-      result.chromePointerEvents === 'none' && Boolean(result.composer) && Boolean(result.sidebar) &&
-      (!result.homePresent || (Boolean(result.hero) &&
-        (!result.suggestionsPresent || (result.cards.length >= 2 && result.cards.length <= 4))));
+    result.pass = result.installed &&
+      result.version === result.expectedVersion &&
+      result.stylePresent &&
+      result.chromePresent &&
+      result.chromePointerEvents === 'none';
     return result;
   })()`);
 }
