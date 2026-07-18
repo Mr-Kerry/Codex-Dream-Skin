@@ -426,15 +426,26 @@ async function readThemeSourceStamp(loadedTheme) {
 
 async function probeSession(session) {
   return session.evaluate(`(() => {
-    const markers = {
-      shell: Boolean(document.querySelector('main.main-surface')),
-      sidebar: Boolean(document.querySelector('aside.app-shell-left-panel')),
-      composer: Boolean(document.querySelector('.composer-surface-chrome')),
-      main: Boolean(document.querySelector('[role="main"]')),
-    };
+    const shell = document.querySelector(
+      'main.main-surface, main, [role="main"]'
+    );
+    const sidebar = document.querySelector(
+      'aside.app-shell-left-panel, aside, nav[aria-label*="side" i]'
+    );
+    const composer = document.querySelector(
+      '.composer-surface-chrome, textarea, [contenteditable="true"]'
+    );
+
     return {
-      markers,
-      codex: location.protocol === 'app:' && markers.shell && markers.sidebar && (markers.composer || markers.main),
+      markers: {
+        shell: Boolean(shell),
+        sidebar: Boolean(sidebar),
+        composer: Boolean(composer),
+        main: Boolean(document.querySelector('[role="main"]')),
+      },
+      codex: location.protocol === 'app:' &&
+        Boolean(document.body) &&
+        Boolean(shell),
     };
   })()`);
 }
