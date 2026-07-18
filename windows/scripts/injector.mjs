@@ -521,8 +521,8 @@ export function earlyPayloadFor(payload, revision) {
       if (window[generationKey] !== generation) { stop(); return true; }
       const root = document.documentElement;
       if (!root || !document.body) return false;
-      const shell = document.querySelector('main.main-surface');
-      const sidebar = document.querySelector('aside.app-shell-left-panel');
+      const shell = document.querySelector('main.main-surface, main, [role="main"');
+      const sidebar = document.querySelector('aside.app-shell-left-panel, aside, nav[aria-label*="side" i]');
       if (!shell || !sidebar) return false;
       stop();
       ${payload};
@@ -610,8 +610,8 @@ async function verifySession(session) {
       suggestionsPresent: Boolean(suggestions),
       hero: box(home?.firstElementChild?.firstElementChild?.firstElementChild),
       cards,
-      composer: box(document.querySelector('.composer-surface-chrome')),
-      sidebar: box(document.querySelector('aside.app-shell-left-panel')),
+      composer: box(document.querySelector('.dream-composer, .composer-surface-chrome, textarea, [contenteditable="true"]')),
+      sidebar: box(document.querySelector('aside.app-shell-left-panel, aside, nav[aria-label*="side" i]')),
       viewport: { width: innerWidth, height: innerHeight },
       documentOverflow: {
         x: document.documentElement.scrollWidth > document.documentElement.clientWidth,
