@@ -37,10 +37,23 @@ if ! /usr/bin/grep -F -q 'sfimage=paintpalette.fill' \
   printf 'SwiftBar menu title must retain the Dream Skin palette icon.\n' >&2
   exit 1
 fi
-if ! /usr/bin/grep -F -q 'type=slider min=0 max=100' \
-  "$ROOT/menubar/codex_dream_skin.10s.sh" \
+if /usr/bin/grep -F -q 'type=slider' "$ROOT/menubar/codex_dream_skin.10s.sh" \
+  || ! /usr/bin/grep -F -q 'for opacity in 0 10 20 30 40 50 60 70 80 90 100' \
+    "$ROOT/menubar/codex_dream_skin.10s.sh" \
+  || ! /usr/bin/grep -F -q 'param1="%s"' "$ROOT/menubar/codex_dream_skin.10s.sh" \
   || ! /usr/bin/grep -F -q 'art.opacity' "$ROOT/scripts/set-opacity-macos.mjs"; then
-  printf 'SwiftBar background opacity slider or its atomic theme writer is missing.\n' >&2
+  printf 'SwiftBar background opacity choices or their atomic theme writer are invalid.\n' >&2
+  exit 1
+fi
+for theme_writer in set-opacity-macos.sh switch-theme-macos.sh load-image-theme-macos.sh customize-theme-macos.sh; do
+  if ! /usr/bin/grep -F -q 'acquire_theme_write_lock' "$ROOT/scripts/$theme_writer"; then
+    printf 'Active theme writer does not use the shared lock: %s\n' "$theme_writer" >&2
+    exit 1
+  fi
+done
+if /usr/bin/grep -F -q 'image_name="background.jpg"' \
+  "$ROOT/scripts/load-image-theme-macos.sh"; then
+  printf 'Image loading must publish a uniquely named active image.\n' >&2
   exit 1
 fi
 if ! /usr/bin/grep -F -q 'flag: "wx"' "$ROOT/scripts/write-theme.mjs"; then
@@ -96,6 +109,30 @@ cleanup_tests() {
   /bin/rm -rf "$TMP"
 }
 trap cleanup_tests EXIT
+
+# An old process must not remove a replacement lock after its ownership token
+# has changed. A normal acquire/release cycle must still leave no artifacts.
+LOCK_HOME="$TMP/theme-lock-home"
+/bin/mkdir -p "$LOCK_HOME"
+/usr/bin/env HOME="$LOCK_HOME" /bin/bash -c '
+  set -euo pipefail
+  . "$1/scripts/common-macos.sh"
+  acquire_theme_write_lock
+  old_lock="$DREAM_SKIN_THEME_WRITE_LOCK"
+  old_token="$DREAM_SKIN_THEME_WRITE_LOCK_TOKEN"
+  /bin/rm "$old_lock/owner-$old_token"
+  /bin/rmdir "$old_lock"
+  /bin/mkdir "$old_lock"
+  /usr/bin/touch "$old_lock/owner-replacement"
+  release_theme_write_lock
+  [ -f "$old_lock/owner-replacement" ]
+  /bin/rm "$old_lock/owner-replacement"
+  /bin/rmdir "$old_lock"
+  acquire_theme_write_lock
+  current_lock="$DREAM_SKIN_THEME_WRITE_LOCK"
+  release_theme_write_lock
+  [ ! -e "$current_lock" ]
+' _ "$ROOT"
 
 # Standalone archives flatten macos/ to their root. Prompt guides and NOTICE
 # must describe that layout and must not claim that Windows assets are bundled.
@@ -227,8 +264,14 @@ if /usr/bin/env HOME="$SWITCH_HOME" NODE="$NODE" \
 fi
 /usr/bin/env HOME="$SWITCH_HOME" NODE="$NODE" \
   "$ROOT/scripts/switch-theme-macos.sh" --id preset-switch-fixture --no-apply >/dev/null
-/usr/bin/cmp -s "$SWITCH_STATE/theme/background.png" \
+SWITCH_ACTIVE_IMAGE="$("$NODE" -e '
+  const theme = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+  process.stdout.write(theme.image || "");
+' "$SWITCH_STATE/theme/theme.json")"
+case "$SWITCH_ACTIVE_IMAGE" in theme-*.png) ;; *) exit 1 ;; esac
+/usr/bin/cmp -s "$SWITCH_STATE/theme/$SWITCH_ACTIVE_IMAGE" \
   "$SWITCH_STATE/themes/preset-switch-fixture/background.png"
+[ ! -e "$SWITCH_STATE/theme/background.png" ]
 [ ! -e "$SWITCH_STATE/theme/old.png" ]
 "$NODE" -e '
   const fs = require("fs");
@@ -692,7 +735,15 @@ if [ -f "$RESET_CASE_ALIAS/keep-me" ]; then
   [ -f "$RESET_FIXTURE/keep-me" ]
 fi
 "$NODE" "$ROOT/scripts/write-theme.mjs" reset-demo --output-dir "$TMP/theme" >/dev/null
-[ ! -e "$TMP/theme" ]
+RESET_IMAGE="$("$NODE" -e '
+  const theme = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+  if (theme.schemaVersion !== 1 || theme.name !== "Dream Skin") process.exit(1);
+  process.stdout.write(theme.image || "");
+' "$TMP/theme/theme.json")"
+case "$RESET_IMAGE" in bundled-demo-*.png) ;; *) exit 1 ;; esac
+/usr/bin/cmp -s "$TMP/theme/$RESET_IMAGE" "$ROOT/assets/portal-hero.png"
+[ ! -e "$TMP/theme/background.png" ]
+"$NODE" "$ROOT/scripts/injector.mjs" --check-payload --theme-dir "$TMP/theme" >/dev/null
 
 CONFIG="$TMP/config.toml"
 BACKUP="$TMP/theme-backup.json"
@@ -829,7 +880,7 @@ CRLF_BACKUP="$TMP/config-crlf-backup.json"
 "$NODE" "$ROOT/scripts/theme-config.mjs" restore "$CRLF_CONFIG" "$CRLF_BACKUP" >/dev/null
 /usr/bin/cmp -s "$CRLF_CONFIG" "$TMP/original-crlf.toml"
 
-/usr/bin/env -u HOME /bin/bash -c '. "$1/scripts/common-macos.sh"; [ -n "$HOME" ] && [ "$SKIN_VERSION" = "1.2.0" ]' _ "$ROOT"
+/usr/bin/env -u HOME /bin/bash -c '. "$1/scripts/common-macos.sh"; [ -n "$HOME" ] && [ "$SKIN_VERSION" = "1.2.1" ]' _ "$ROOT"
 "$ROOT/scripts/doctor-macos.sh" >/dev/null
 
 printf 'PASS: syntax, payload, bundled presets, preset seeding, runtime-state safety, custom-theme, config round-trips, HOME recovery, signature, and doctor checks.\n'

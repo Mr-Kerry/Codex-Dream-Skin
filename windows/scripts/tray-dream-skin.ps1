@@ -206,6 +206,21 @@ try {
     return Start-Process -FilePath "$($state.nodePath)" -ArgumentList $arguments -WindowStyle Hidden -PassThru
   }
 
+  function Test-DreamSkinLiveThemeRefreshAvailable {
+    param([AllowNull()][object]$State, [bool]$Paused = $false)
+    if ($Paused -or $null -eq $State -or -not $State.injectorPid -or
+      -not $State.injectorStartedAt -or -not $State.nodePath -or -not $State.injectorPath -or
+      -not $State.browserId -or -not $State.port) {
+      return $false
+    }
+    if (-not (Test-Path -LiteralPath "$($State.nodePath)" -PathType Leaf) -or
+      -not (Test-Path -LiteralPath "$($State.injectorPath)" -PathType Leaf)) {
+      return $false
+    }
+    $startedAt = Get-DreamSkinProcessStartedAt -ProcessId ([int]$State.injectorPid)
+    return [bool]($startedAt -and $startedAt -eq "$($State.injectorStartedAt)")
+  }
+
   function Write-DreamSkinOpacity {
     $current = Read-DreamSkinTheme -ThemeDirectory $paths.Active -SkipImageMetadata
     if ($null -eq $current.Theme.art) {
@@ -240,6 +255,16 @@ try {
     }
     try {
       Write-DreamSkinOpacity
+      $state = $null
+      try { $state = Read-DreamSkinState -Path $paths.State } catch {}
+      $paused = Test-DreamSkinPaused -StateRoot $StateRoot
+      if (-not (Test-DreamSkinLiveThemeRefreshAvailable -State $state -Paused $paused)) {
+        $opacityRefreshState.Pending = $false
+        if ($null -ne $opacityRefreshState.Menu -and -not $opacityRefreshState.Menu.IsDisposed) {
+          $opacityRefreshState.Menu.Text = "背景透明度  $($opacityRefreshState.Percent)% · 已保存，下次应用"
+        }
+        return
+      }
       if ($null -ne $opacityRefreshState.Menu -and -not $opacityRefreshState.Menu.IsDisposed) {
         $opacityRefreshState.Menu.Text = "背景透明度  $($opacityRefreshState.Percent)% · 应用中"
       }
@@ -340,8 +365,10 @@ try {
     $opacityRefreshState.Percent = $opacityPercent
     $opacityStatus = if ($null -ne $opacityRefreshState.Process -and -not $opacityRefreshState.Process.HasExited) {
       '应用中'
-    } else {
+    } elseif (Test-DreamSkinLiveThemeRefreshAvailable -State $state -Paused $paused) {
       '已同步'
+    } else {
+      '已保存，下次应用'
     }
     $opacityMenu = [System.Windows.Forms.ToolStripMenuItem]::new("背景透明度  $opacityPercent% · $opacityStatus")
     $opacityRefreshState.Menu = $opacityMenu
@@ -359,7 +386,7 @@ try {
         if ($null -ne $opacityRefreshState.Process -and -not $opacityRefreshState.Process.HasExited) {
           $opacityRefreshState.Pending = $true
         }
-        $opacityMenu.Text = "背景透明度  $percent% · 应用中"
+        $opacityMenu.Text = "背景透明度  $percent% · 保存中"
         $opacityRefreshTimer.Stop()
         $opacityRefreshTimer.Start()
       } catch {

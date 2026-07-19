@@ -98,11 +98,23 @@ if [ -f "$STATE_ROOT/theme/theme.json" ]; then
   esac
 fi
 
-if [ "$BUSY" = "true" ] || [ ! -x "$SET_OPACITY" ]; then
-  OPACITY_MENU_LINE="背景透明度: ${OPACITY_PERCENT}% | color=#98a2b3"
-else
-  OPACITY_MENU_LINE="背景透明度 | type=slider min=0 max=100 value=$OPACITY_PERCENT width=180 bash=\"$SET_OPACITY\" terminal=false refresh=true"
-fi
+render_opacity_menu() {
+  if [ "$BUSY" = "true" ] || [ ! -x "$SET_OPACITY" ]; then
+    /usr/bin/printf '%s\n' "背景透明度: ${OPACITY_PERCENT}% | color=#98a2b3"
+    return
+  fi
+
+  /usr/bin/printf '%s\n' "背景透明度: ${OPACITY_PERCENT}%"
+  for opacity in 0 10 20 30 40 50 60 70 80 90 100; do
+    checked=""
+    if [ "$opacity" = "$OPACITY_PERCENT" ]; then
+      checked=" checked=true"
+    fi
+    /usr/bin/printf -- \
+      '-- %s%% | bash="%s" param1="%s" terminal=false refresh=true%s\n' \
+      "$opacity" "$SET_OPACITY" "$opacity" "$checked"
+  done
+}
 
 echo "$TITLE | sfimage=paintpalette.fill"
 echo "---"
@@ -122,7 +134,7 @@ else
       ;;
   esac
 fi
-echo "$OPACITY_MENU_LINE"
+render_opacity_menu
 if [ -n "$OPERATION_MESSAGE_MENU_LINE" ]; then
   case "$OPERATION_LINE" in
     failed) OPERATION_COLOR="#b4233a" ;;

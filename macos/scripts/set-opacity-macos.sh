@@ -13,4 +13,8 @@ for candidate in "$@"; do
   esac
 done
 [ -n "$value" ] || exit 2
+ensure_state_root
+[ -f "$THEME_PATH" ] || fail "Active theme metadata is missing."
+acquire_theme_write_lock || fail "Timed out waiting to update theme opacity."
+trap release_theme_write_lock EXIT
 "$NODE" "$SCRIPT_DIR/set-opacity-macos.mjs" "$THEME_PATH" "$value"

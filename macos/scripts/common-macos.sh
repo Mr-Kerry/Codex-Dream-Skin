@@ -29,11 +29,13 @@ CODEX_APP_JOB_LABEL="com.openai.codex-dream-skin-studio.app"
 INJECTOR_JOB_LABEL="com.openai.codex-dream-skin-studio.injector"
 EXPECTED_CODEX_TEAM_ID="2DC432GLL2"
 EXPECTED_CODEX_REQUIREMENT="anchor apple generic and certificate leaf[subject.OU] = \"$EXPECTED_CODEX_TEAM_ID\""
-SKIN_VERSION="1.2.0"
+SKIN_VERSION="1.2.1"
 DREAM_SKIN_VALIDATED_RUNTIME_PID=""
 DREAM_SKIN_VALIDATED_RUNTIME_BUNDLE=""
 DREAM_SKIN_VALIDATED_RUNTIME_EXE=""
 DREAM_SKIN_VALIDATED_RUNTIME_NODE=""
+DREAM_SKIN_THEME_WRITE_LOCK=""
+DREAM_SKIN_THEME_WRITE_LOCK_TOKEN=""
 
 fail() {
   local message="$*"
@@ -66,6 +68,80 @@ APPLESCRIPT
 ensure_state_root() {
   /bin/mkdir -p "$STATE_ROOT"
   /bin/chmod 700 "$STATE_ROOT"
+}
+
+acquire_theme_write_lock() {
+  local candidate=""
+  local lock_path="$STATE_ROOT/.theme-write.lock"
+  local lock_mtime=""
+  local lock_token=""
+  local now=""
+  local owner_count=0
+  local owner_id=""
+  local owner_name=""
+  local owner_path=""
+  local owner_pid=""
+  local attempts=0
+  ensure_state_root
+  while ! /bin/mkdir "$lock_path" 2>/dev/null; do
+    attempts=$((attempts + 1))
+    [ "$attempts" -lt 500 ] || return 1
+    owner_count=0
+    owner_path=""
+    for candidate in "$lock_path"/owner-*; do
+      [ -f "$candidate" ] || continue
+      owner_count=$((owner_count + 1))
+      owner_path="$candidate"
+    done
+    if [ "$owner_count" -eq 1 ]; then
+      lock_mtime="$(/usr/bin/stat -f '%m' "$owner_path" 2>/dev/null || true)"
+    else
+      lock_mtime="$(/usr/bin/stat -f '%m' "$lock_path" 2>/dev/null || true)"
+    fi
+    now="$(/bin/date +%s)"
+    case "$lock_mtime" in
+      ''|*[!0-9]*) ;;
+      *)
+        if [ $((now - lock_mtime)) -gt 120 ]; then
+          if [ "$owner_count" -eq 1 ]; then
+            owner_name="$(/usr/bin/basename "$owner_path")"
+            owner_id="${owner_name#owner-}"
+            owner_pid="${owner_id%%-*}"
+            case "$owner_pid" in
+              ''|*[!0-9]*) ;;
+              *)
+                if ! /bin/kill -0 "$owner_pid" 2>/dev/null; then
+                  /bin/rm "$owner_path" 2>/dev/null && /bin/rmdir "$lock_path" 2>/dev/null || true
+                fi
+                ;;
+            esac
+          elif [ "$owner_count" -eq 0 ]; then
+            /bin/rmdir "$lock_path" 2>/dev/null || true
+          fi
+        fi
+        ;;
+    esac
+    /bin/sleep 0.02
+  done
+  lock_token="$(new_operation_token | /usr/bin/tr ':' '-')-${RANDOM:-0}"
+  owner_path="$lock_path/owner-$lock_token"
+  if ! (umask 077; /usr/bin/touch "$owner_path"); then
+    /bin/rmdir "$lock_path" 2>/dev/null || true
+    return 1
+  fi
+  DREAM_SKIN_THEME_WRITE_LOCK="$lock_path"
+  DREAM_SKIN_THEME_WRITE_LOCK_TOKEN="$lock_token"
+}
+
+release_theme_write_lock() {
+  local owner_path=""
+  if [ -n "${DREAM_SKIN_THEME_WRITE_LOCK:-}" ] \
+    && [ -n "${DREAM_SKIN_THEME_WRITE_LOCK_TOKEN:-}" ]; then
+    owner_path="$DREAM_SKIN_THEME_WRITE_LOCK/owner-$DREAM_SKIN_THEME_WRITE_LOCK_TOKEN"
+    /bin/rm "$owner_path" 2>/dev/null && /bin/rmdir "$DREAM_SKIN_THEME_WRITE_LOCK" 2>/dev/null || true
+  fi
+  DREAM_SKIN_THEME_WRITE_LOCK=""
+  DREAM_SKIN_THEME_WRITE_LOCK_TOKEN=""
 }
 
 new_operation_token() {

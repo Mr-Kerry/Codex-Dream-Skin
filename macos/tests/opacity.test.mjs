@@ -30,8 +30,16 @@ try {
   assert.deepEqual((await fs.readdir(root)).sort(), ["theme.json"]);
   assert.notEqual(await run(101), 0);
   assert.equal(JSON.parse(await fs.readFile(themePath, "utf8")).art.opacity, 0.73);
+
+  const concurrentValues = [10, 25, 50, 75, 90];
+  const results = await Promise.all(concurrentValues.map(run));
+  assert.ok(results.some((code) => code === 0));
+  const concurrentTheme = JSON.parse(await fs.readFile(themePath, "utf8"));
+  assert.ok(concurrentValues.includes(Math.round(concurrentTheme.art.opacity * 100)));
+  assert.equal(concurrentTheme.art.safeArea, "left");
+  assert.deepEqual((await fs.readdir(root)).sort(), ["theme.json"]);
 } finally {
   await fs.rm(root, { recursive: true, force: true });
 }
 
-console.log("PASS: macOS opacity updates are atomic, bounded, and preserve theme metadata.");
+console.log("PASS: macOS opacity updates are atomic, bounded, concurrent-safe, and preserve theme metadata.");

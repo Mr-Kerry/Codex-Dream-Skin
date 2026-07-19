@@ -78,10 +78,13 @@ progress "Loading image..."
 # Fast Node for write-theme (avoid full codesign when possible)
 ensure_node_runtime
 
-image_name="background.jpg"
-temporary="$THEME_DIR/.background.$$.tmp.jpg"
+image_name="background-$theme_id.jpg"
+temporary="$STATE_ROOT/.${image_name}.$$.tmp"
 prepared="$THEME_DIR/$image_name"
-cleanup_temporary() { /bin/rm -f "$temporary"; }
+cleanup_temporary() {
+  /bin/rm -f "$temporary"
+  release_theme_write_lock
+}
 trap cleanup_temporary EXIT
 
 # Prefer copying already-JPEG; sips only when needed (large PNG conversion is the slow part)
@@ -100,6 +103,7 @@ esac
 PREPARED_BYTES="$(/usr/bin/stat -f '%z' "$temporary")"
 [ "$PREPARED_BYTES" -le 16777216 ] || fail "Prepared image larger than 16 MB."
 /bin/chmod 600 "$temporary"
+acquire_theme_write_lock || fail "Timed out waiting to load the active theme."
 /bin/mv -f "$temporary" "$prepared"
 
 theme_args=(
@@ -116,13 +120,15 @@ theme_args=(
 [ -n "$FOCUS_X" ] && theme_args+=(--focus-x "$FOCUS_X")
 [ -n "$FOCUS_Y" ] && theme_args+=(--focus-y "$FOCUS_Y")
 "$NODE" "$SCRIPT_DIR/write-theme.mjs" "${theme_args[@]}" >/dev/null
-/usr/bin/find "$THEME_DIR" -maxdepth 1 -type f -name 'background.*' ! -name "$image_name" -delete
-trap - EXIT
+/usr/bin/find "$THEME_DIR" -maxdepth 1 -type f \
+  ! -name 'theme.json' ! -name "$image_name" -delete
 
 lib_dir="$THEMES_ROOT/$theme_id"
 /bin/mkdir -p "$lib_dir"
 /bin/cp -f "$THEME_DIR/$image_name" "$THEME_DIR/theme.json" "$lib_dir/"
 /bin/chmod 600 "$lib_dir/"* 2>/dev/null || true
+release_theme_write_lock
+trap - EXIT
 
 dest_lib_img="$IMAGES_DIR/$(/usr/bin/basename "$IMAGE")"
 src_dir="$(cd "$(dirname "$IMAGE")" && pwd -P)"

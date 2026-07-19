@@ -1,6 +1,6 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -89,9 +89,50 @@ if (mode === "reset-demo") {
     throw error;
   });
   if (isContainedPath(root, outputDir) || (realOutput && isContainedPath(realRoot, realOutput))) {
-    throw new Error("Refusing to delete project files; pass a user --output-dir.");
+    throw new Error("Refusing to replace project files; pass a user --output-dir.");
   }
-  await fs.rm(outputDir, { recursive: true, force: true });
+
+  const bundledThemePath = path.join(root, "assets", "theme.json");
+  const bundledTheme = JSON.parse(await fs.readFile(bundledThemePath, "utf8"));
+  if (bundledTheme?.schemaVersion !== 1 || typeof bundledTheme.image !== "string") {
+    throw new Error("The bundled demo theme metadata is invalid.");
+  }
+  const bundledImageName = path.basename(bundledTheme.image);
+  if (bundledImageName !== bundledTheme.image || bundledImageName === "theme.json") {
+    throw new Error("The bundled demo image path is invalid.");
+  }
+  const extension = path.extname(bundledImageName).toLowerCase();
+  if (!/^\.(?:png|jpe?g|webp)$/.test(extension)) {
+    throw new Error("The bundled demo image type is unsupported.");
+  }
+  const bundledImage = await fs.readFile(path.join(root, "assets", bundledImageName));
+  if (bundledImage.length < 1 || bundledImage.length > 16 * 1024 * 1024) {
+    throw new Error("The bundled demo image has an invalid size.");
+  }
+  const digest = createHash("sha256").update(bundledImage).digest("hex").slice(0, 24);
+  const publishedImage = `bundled-demo-${digest}${extension}`;
+  const previousImage = await fs.readFile(themePath, "utf8")
+    .then((value) => JSON.parse(value)?.image)
+    .catch(() => null);
+
+  await fs.mkdir(outputDir, { recursive: true, mode: 0o700 });
+  const canonicalOutput = await fs.realpath(outputDir);
+  if (isContainedPath(realRoot, canonicalOutput)) {
+    throw new Error("Refusing to replace project files; pass a user --output-dir.");
+  }
+  await atomicWrite(path.join(canonicalOutput, publishedImage), bundledImage);
+  await atomicWrite(
+    path.join(canonicalOutput, "theme.json"),
+    `${JSON.stringify({ ...bundledTheme, image: publishedImage }, null, 2)}\n`,
+  );
+  if (
+    typeof previousImage === "string"
+    && previousImage !== publishedImage
+    && path.basename(previousImage) === previousImage
+    && previousImage !== "theme.json"
+  ) {
+    await fs.rm(path.join(canonicalOutput, previousImage), { force: true }).catch(() => {});
+  }
   console.log("Restored the bundled abstract demo preset.");
   process.exit(0);
 }

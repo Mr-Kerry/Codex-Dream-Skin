@@ -13,6 +13,7 @@ stage=""
 finish_switch() {
   local code="$1"
   [ -z "${stage:-}" ] || /bin/rm -rf "$stage"
+  release_theme_write_lock
   if [ "$code" -ne 0 ] && [ -n "${OPERATION_TOKEN:-}" ]; then
     write_operation_state failed "主题切换未完成，应用结果未确认" "$OPERATION_TOKEN" 2>/dev/null || true
     finish_client_operation "${PORT:-9341}" error "主题切换未完成，应用结果未确认" \
@@ -83,6 +84,7 @@ THEME_BYTES="$(/usr/bin/stat -f '%z' "$stage/$THEME_IMAGE")"
 [ "$THEME_BYTES" -gt 0 ] && [ "$THEME_BYTES" -le 16777216 ] \
   || fail "Theme image must be non-empty and no larger than 16 MB."
 /bin/chmod 600 "$stage/"*
+acquire_theme_write_lock || fail "Timed out waiting to switch the active theme."
 for entry in "$stage/"*; do
   [ -f "$entry" ] || continue
   [ "$(/usr/bin/basename "$entry")" = "theme.json" ] && continue
@@ -93,6 +95,7 @@ done
 /bin/mv -f "$stage/theme.json" "$THEME_DIR/theme.json"
 /usr/bin/find "$THEME_DIR" -maxdepth 1 -type f \
   ! -name 'theme.json' ! -name "$THEME_IMAGE" -delete
+release_theme_write_lock
 /bin/rm -rf "$stage"
 stage=""
 

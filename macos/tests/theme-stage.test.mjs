@@ -39,10 +39,10 @@ try {
   );
 
   const imageName = await runStage(source, stage);
-  assert.equal(imageName, "background-a.png");
+  assert.match(imageName, /^theme-[a-f0-9]{24}\.png$/);
   const stagedConfig = JSON.parse(await fs.readFile(path.join(stage, "theme.json"), "utf8"));
-  assert.equal(stagedConfig.image, "background-a.png");
-  const stagedBeforeMutation = await fs.readFile(path.join(stage, "background-a.png"));
+  assert.equal(stagedConfig.image, imageName);
+  const stagedBeforeMutation = await fs.readFile(path.join(stage, imageName));
 
   // A source edit after staging must not change the pair that is about to be
   // published. This is the regression for switch-theme's old copy-after-
@@ -53,7 +53,7 @@ try {
     `${JSON.stringify({ schemaVersion: 1, id: "preset-race", name: "B", image: "background-b.png" })}\n`,
   );
   await fs.writeFile(path.join(source, "background-a.png"), Buffer.from("changed-after-stage"));
-  assert.deepEqual(await fs.readFile(path.join(stage, "background-a.png")), stagedBeforeMutation);
+  assert.deepEqual(await fs.readFile(path.join(stage, imageName)), stagedBeforeMutation);
   assert.equal(JSON.parse(await fs.readFile(path.join(stage, "theme.json"), "utf8")).name, "A");
 
   const outside = path.join(tempRoot, "outside.png");

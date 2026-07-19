@@ -33,7 +33,11 @@ require_macos_runtime
 ensure_state_root
 
 if [ "$RESET_DEMO" = "true" ]; then
+  acquire_theme_write_lock || fail "Timed out waiting to reset the active theme."
+  trap release_theme_write_lock EXIT
   "$NODE" "$SCRIPT_DIR/write-theme.mjs" reset-demo --output-dir "$THEME_DIR"
+  release_theme_write_lock
+  trap - EXIT
 else
   if [ -z "$IMAGE" ]; then
     IMAGE="$(/usr/bin/osascript -e 'POSIX path of (choose file with prompt "选择一张主题图片（建议横向、宽度 2000px 以上）" of type {"public.image"})')" \
@@ -53,15 +57,19 @@ else
   /bin/mkdir -p "$THEME_DIR"
   /bin/chmod 700 "$THEME_DIR"
   image_name="background-$(/bin/date '+%Y%m%d-%H%M%S')-$$.jpg"
-  temporary="$THEME_DIR/.${image_name}.tmp.jpg"
+  temporary="$STATE_ROOT/.${image_name}.tmp.jpg"
   prepared="$THEME_DIR/$image_name"
-  cleanup_temporary() { /bin/rm -f "$temporary"; }
+  cleanup_temporary() {
+    /bin/rm -f "$temporary"
+    release_theme_write_lock
+  }
   trap cleanup_temporary EXIT
   /usr/bin/sips -s format jpeg -s formatOptions 84 -Z 3200 "$IMAGE" --out "$temporary" >/dev/null \
     || fail "macOS could not convert the selected image. Use PNG, JPEG, HEIC, TIFF, or WebP."
   [ -s "$temporary" ] || fail "The converted image is empty."
   PREPARED_BYTES="$(/usr/bin/stat -f '%z' "$temporary")"
   [ "$PREPARED_BYTES" -le 16777216 ] || fail "The prepared image is larger than 16 MB. Choose a simpler or smaller image."
+  acquire_theme_write_lock || fail "Timed out waiting to customize the active theme."
   /bin/mv -f "$temporary" "$prepared"
   /bin/chmod 600 "$prepared"
 
@@ -69,7 +77,9 @@ else
     --output-dir "$THEME_DIR" --image "$image_name" \
     --name "$THEME_NAME" --tagline "$TAGLINE" --quote "$QUOTE" \
     --accent "$ACCENT" --secondary "$SECONDARY" --highlight "$HIGHLIGHT"
-  /usr/bin/find "$THEME_DIR" -maxdepth 1 -type f -name 'background-*' ! -name "$image_name" -delete
+  /usr/bin/find "$THEME_DIR" -maxdepth 1 -type f \
+    ! -name 'theme.json' ! -name "$image_name" -delete
+  release_theme_write_lock
   trap - EXIT
 fi
 

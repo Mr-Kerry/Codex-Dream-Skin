@@ -777,7 +777,10 @@ try {
     $traySource.Contains('[System.Windows.Forms.TrackBar]')) {
     throw 'The tray opacity control regressed to the unstyled native TrackBar.'
   }
-  if (-not $traySource.Contains('· 已同步') -or -not $traySource.Contains('.HasExited')) {
+  if (-not $traySource.Contains('· 已同步') -or
+      -not $traySource.Contains('· 已保存，下次应用') -or
+      -not $traySource.Contains('Test-DreamSkinLiveThemeRefreshAvailable') -or
+      -not $traySource.Contains('.HasExited')) {
     throw 'The tray opacity display no longer distinguishes saved values from confirmed live rendering.'
   }
   $opacityHandler = [regex]::Match(

@@ -1,5 +1,6 @@
 import fs from "node:fs/promises";
 import { constants as fsConstants } from "node:fs";
+import { createHash } from "node:crypto";
 import path from "node:path";
 
 const [sourceDirArg, stageDirArg] = process.argv.slice(2);
@@ -98,19 +99,26 @@ async function main() {
   assertContained(sourceRoot, imagePath, "Theme image");
   const image = await readStableFile(imagePath, "Theme image", MAX_IMAGE_BYTES);
   if (image.bytes.length < 1) throw new Error("Theme image is empty");
+  const extension = path.extname(theme.image).toLowerCase();
+  if (!/^\.(?:png|jpe?g|webp)$/.test(extension)) {
+    throw new Error("Theme image must be PNG, JPEG, or WebP");
+  }
+  const imageDigest = createHash("sha256").update(image.bytes).digest("hex").slice(0, 24);
+  const publishedImage = `theme-${imageDigest}${extension}`;
+  const publishedConfig = Buffer.from(`${JSON.stringify({ ...theme, image: publishedImage }, null, 2)}\n`);
 
   const stageRoot = await fs.realpath(stageDirArg);
   const stageStat = await fs.stat(stageRoot);
   if (!stageStat.isDirectory()) throw new Error("Theme stage must be a directory");
   assertContained(stageRoot, path.join(stageRoot, "theme.json"), "Staged theme config");
-  assertContained(stageRoot, path.join(stageRoot, theme.image), "Staged theme image");
+  assertContained(stageRoot, path.join(stageRoot, publishedImage), "Staged theme image");
 
   // Write both files from the already-open, stable descriptors. The caller
   // publishes the image first and theme.json last, so the watcher only ever
   // observes a complete pair; subsequent source edits cannot race the copy.
-  await writeExclusive(path.join(stageRoot, theme.image), image.bytes);
-  await writeExclusive(path.join(stageRoot, "theme.json"), config.bytes);
-  process.stdout.write(theme.image);
+  await writeExclusive(path.join(stageRoot, publishedImage), image.bytes);
+  await writeExclusive(path.join(stageRoot, "theme.json"), publishedConfig);
+  process.stdout.write(publishedImage);
 }
 
 await main();
