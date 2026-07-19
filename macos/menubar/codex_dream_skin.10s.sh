@@ -47,6 +47,7 @@ RESTORE="$SCRIPTS/restore-dream-skin-macos.sh"
 STATUS="$SCRIPTS/status-dream-skin-macos.sh"
 SWITCH="$SCRIPTS/switch-theme-macos.sh"
 LOAD_IMG="$SCRIPTS/load-image-theme-macos.sh"
+SET_OPACITY="$SCRIPTS/set-opacity-macos.sh"
 [ -x "$APPLY" ] || APPLY="$START"
 
 STATE_ROOT="$HOME/Library/Application Support/CodexDreamSkinStudio"
@@ -88,6 +89,21 @@ OPERATION_MESSAGE_MENU_LINE="$(menu_text "$OPERATION_MESSAGE_LINE")"
 BUSY="false"
 case "$OPERATION_LINE" in applying|pausing) BUSY="true" ;; esac
 
+OPACITY_PERCENT="30"
+if [ -f "$STATE_ROOT/theme/theme.json" ]; then
+  raw_opacity="$(/usr/bin/plutil -extract art.opacity raw -o - "$STATE_ROOT/theme/theme.json" 2>/dev/null || true)"
+  case "$raw_opacity" in
+    ''|*[!0-9.]*) ;;
+    *) OPACITY_PERCENT="$(/usr/bin/awk -v value="$raw_opacity" 'BEGIN { p = int(value * 100 + 0.5); if (p < 0) p = 0; if (p > 100) p = 100; print p }')" ;;
+  esac
+fi
+
+if [ "$BUSY" = "true" ] || [ ! -x "$SET_OPACITY" ]; then
+  OPACITY_MENU_LINE="背景透明度: ${OPACITY_PERCENT}% | color=#98a2b3"
+else
+  OPACITY_MENU_LINE="背景透明度 | type=slider min=0 max=100 value=$OPACITY_PERCENT width=180 bash=\"$SET_OPACITY\" terminal=false refresh=true"
+fi
+
 echo "$TITLE | sfimage=paintpalette.fill"
 echo "---"
 if [ "$OPERATION_LINE" = "applying" ]; then
@@ -106,6 +122,7 @@ else
       ;;
   esac
 fi
+echo "$OPACITY_MENU_LINE"
 if [ -n "$OPERATION_MESSAGE_MENU_LINE" ]; then
   case "$OPERATION_LINE" in
     failed) OPERATION_COLOR="#b4233a" ;;

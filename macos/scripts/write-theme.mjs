@@ -160,6 +160,7 @@ const custom = {
   art: {
     safeArea,
     taskMode,
+    opacity: 0.3,
   },
 };
 

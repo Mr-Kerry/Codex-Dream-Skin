@@ -350,9 +350,12 @@ async function listAppTargets(port) {
 
 async function probeSession(session) {
   return session.evaluate(`(() => {
+    const legacyShell = document.querySelector('main.main-surface');
+    const legacySidebar = document.querySelector('aside.app-shell-left-panel');
+    const isCodexApp = globalThis.location?.protocol === 'app:';
     const markers = {
-      shell: Boolean(document.querySelector('main.main-surface')),
-      sidebar: Boolean(document.querySelector('aside.app-shell-left-panel')),
+      shell: Boolean(legacyShell),
+      sidebar: Boolean(legacySidebar),
       composer: Boolean(document.querySelector('.composer-surface-chrome')),
       main: Boolean(document.querySelector('[role="main"]')),
     };
@@ -360,7 +363,7 @@ async function probeSession(session) {
       title: document.title,
       href: location.href,
       markers,
-      codex: markers.shell && markers.sidebar,
+      codex: Boolean(document.body) && (Boolean(legacyShell && legacySidebar) || isCodexApp),
     };
   })()`);
 }
@@ -494,6 +497,7 @@ async function loadTheme(themeDir) {
   const art = {
     focusX: unit(rawArt.focusX, "art.focusX"),
     focusY: unit(rawArt.focusY, "art.focusY"),
+    opacity: unit(rawArt.opacity, "art.opacity"),
     safeArea: choice(rawArt.safeArea, "art.safeArea", ["auto", "left", "right", "center", "none"]),
     taskMode: choice(rawArt.taskMode, "art.taskMode", ["auto", "ambient", "banner", "off"]),
   };
@@ -1119,7 +1123,8 @@ export function earlyPayloadFor(payload, revision) {
       if (!document.documentElement) return false;
       const shell = document.querySelector('main.main-surface');
       const sidebar = document.querySelector('aside.app-shell-left-panel');
-      if (!shell || !sidebar) return false;
+      const isCodexApp = globalThis.location?.protocol === 'app:';
+      if ((!shell || !sidebar) && !isCodexApp) return false;
       stop();
       ${payload};
       window[appliedKey] = generation;

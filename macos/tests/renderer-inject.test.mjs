@@ -42,17 +42,17 @@ assert.doesNotMatch(
 );
 assert.match(
   css,
-  /data-dream-art-task-mode="ambient"[\s\S]{0,500}body\s*\{[\s\S]{0,500}background-image:\s*var\(--dream-skin-art\) !important;[\s\S]{0,200}background-size:\s*cover !important;/,
+  /data-dream-art-task-mode="ambient"[\s\S]{0,500}body\s*\{[\s\S]{0,500}background-image:[^;]*var\(--dream-skin-art\) !important;[\s\S]{0,200}background-size:\s*cover !important;/,
   "Wide ambient task artwork should cover the full application window.",
 );
 assert.match(
   css,
-  /data-dream-task-mode="banner"[\s\S]{0,900}body\s*\{[\s\S]{0,500}background-image:\s*var\(--dream-skin-art\) !important;[\s\S]{0,200}background-size:\s*cover !important;/,
+  /data-dream-task-mode="banner"[\s\S]{0,900}body\s*\{[\s\S]{0,500}background-image:[^;]*var\(--dream-skin-art\) !important;[\s\S]{0,200}background-size:\s*cover !important;/,
   "Wide banner task artwork should use the same full-window wallpaper contract as ambient routes.",
 );
 assert.match(
   css,
-  /data-dream-art-wide="true"\]:has\(main\.main-surface\.dream-skin-home-shell\)[\s\S]{0,100}body\s*\{[\s\S]{0,300}background-image:\s*var\(--dream-skin-art\) !important;/,
+  /data-dream-art-wide="true"\]:has\(main\.main-surface\.dream-skin-home-shell\)[\s\S]{0,100}body\s*\{[\s\S]{0,300}background-image:[^;]*var\(--dream-skin-art\) !important;/,
   "Wide home artwork should use the same full-window image as utility routes.",
 );
 assert.match(
@@ -361,6 +361,7 @@ assert.equal(defaults.attributes.get("data-dream-art-safe-area"), "center");
 assert.equal(defaults.attributes.get("data-dream-art-task-mode"), "ambient");
 assert.equal(defaults.attributes.get("data-dream-art-ready"), "false");
 assert.equal(defaults.rootStyle.values.get("--dream-art-position"), "50.00% 50.00%");
+assert.equal(defaults.rootStyle.values.get("--dream-art-opacity"), "0.3");
 const defaultMetrics = defaults.window.__CODEX_DREAM_SKIN_STATE__.metrics;
 assert.equal(defaultMetrics.rootPasses, 1);
 assert.equal(defaultMetrics.routePasses, 1);
@@ -502,7 +503,7 @@ assert.ok(Number.parseInt(nativeDark.rootStyle.values.get("--ds-bg").slice(1), 1
 const explicit = createFixture({
   id: "explicit-contract",
   appearance: "dark",
-  art: { focusX: 0.15, focusY: 0.8, safeArea: "none", taskMode: "off" },
+  art: { focusX: 0.15, focusY: 0.8, opacity: 0.64, safeArea: "none", taskMode: "off" },
 });
 const explicitResult = vm.runInNewContext(explicit.payload, explicit.context);
 assert.equal(explicitResult.shell, "dark");
@@ -511,6 +512,7 @@ assert.equal(explicit.attributes.get("data-dream-art-safe-area"), "none");
 assert.equal(explicit.attributes.get("data-dream-art-safe"), "none");
 assert.equal(explicit.attributes.get("data-dream-art-task-mode"), "off");
 assert.equal(explicit.rootStyle.values.get("--dream-art-position"), "15.00% 80.00%");
+assert.equal(explicit.rootStyle.values.get("--dream-art-opacity"), "0.64");
 assert.equal(explicit.window.__CODEX_DREAM_SKIN_STATE__.analysis, null);
 
 const banner = createFixture({

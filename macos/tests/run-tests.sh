@@ -37,6 +37,12 @@ if ! /usr/bin/grep -F -q 'sfimage=paintpalette.fill' \
   printf 'SwiftBar menu title must retain the Dream Skin palette icon.\n' >&2
   exit 1
 fi
+if ! /usr/bin/grep -F -q 'type=slider min=0 max=100' \
+  "$ROOT/menubar/codex_dream_skin.10s.sh" \
+  || ! /usr/bin/grep -F -q 'art.opacity' "$ROOT/scripts/set-opacity-macos.mjs"; then
+  printf 'SwiftBar background opacity slider or its atomic theme writer is missing.\n' >&2
+  exit 1
+fi
 if ! /usr/bin/grep -F -q 'flag: "wx"' "$ROOT/scripts/write-theme.mjs"; then
   printf 'Theme writes must create randomized temporary files exclusively.\n' >&2
   exit 1
@@ -55,6 +61,7 @@ fi
 "$NODE" "$ROOT/tests/image-metadata.test.mjs"
 "$NODE" "$ROOT/tests/injector-bootstrap.test.mjs"
 "$NODE" "$ROOT/tests/renderer-inject.test.mjs"
+"$NODE" "$ROOT/tests/opacity.test.mjs"
 "$NODE" "$ROOT/tests/theme-stage.test.mjs"
 
 # Every bundled preset must be a valid, injectable theme pack with a preset-* id.

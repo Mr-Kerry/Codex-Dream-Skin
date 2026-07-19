@@ -25,6 +25,7 @@
     "--ds-text-rgb", "--ds-muted-rgb", "--ds-line-rgb",
     "--dream-art-focus-x", "--dream-art-focus-y", "--dream-art-position",
     "--dream-skin-focus-x", "--dream-skin-focus-y", "--dream-skin-art-position",
+    "--dream-art-opacity",
     "--dream-skin-name", "--dream-skin-tagline", "--dream-skin-project-prefix",
     "--dream-skin-project-label",
   ];
@@ -363,6 +364,7 @@
     const aspect = profile?.aspect || "unknown";
     const focusXValue = `${(clamp(focusX, 0, 1) * 100).toFixed(2)}%`;
     const focusYValue = `${(clamp(focusY, 0, 1) * 100).toFixed(2)}%`;
+    const opacity = typeof ART.opacity === "number" ? clamp(ART.opacity, 0, 1) : 0.3;
 
     setAttribute(root, "data-dream-art-wide", wide ? "true" : "false");
     setAttribute(root, "data-dream-art-safe", canonicalSafe);
@@ -377,6 +379,7 @@
     setStyleProperty(root, "--dream-skin-focus-x", focusXValue);
     setStyleProperty(root, "--dream-skin-focus-y", focusYValue);
     setStyleProperty(root, "--dream-skin-art-position", `${focusXValue} ${focusYValue}`);
+    setStyleProperty(root, "--dream-art-opacity", String(opacity));
   };
 
   const analyzeArt = () => new Promise((resolve) => {
@@ -561,7 +564,9 @@
     const root = document.documentElement;
     if (!root) return;
     shell ||= root.getAttribute(SHELL_ATTR) || resolvedShell();
-    const shellMain = document.querySelector("main.main-surface") || document.querySelector("main");
+    const shellMain = document.querySelector("main.main-surface") ||
+      document.querySelector("main") ||
+      (globalThis.location?.protocol === "app:" ? document.body : null);
     const homeIndicator = document.querySelector('[data-testid="home-icon"]');
     const home = homeIndicator?.closest('[role="main"]') ||
       [...document.querySelectorAll('[role="main"]')].find((candidate) =>

@@ -66,6 +66,11 @@ assert.equal(generations.context.window.__CODEX_DREAM_SKIN_EARLY_APPLIED__, "new
 const discoveryStart = source.indexOf("record.earlyScriptId = await registerEarly");
 const probeStart = source.indexOf("const probe = await waitForCodexProbe", discoveryStart);
 assert.ok(discoveryStart >= 0 && probeStart > discoveryStart, "Early registration must happen before full shell probing.");
+const probeStartForCompatibility = source.indexOf("async function probeSession");
+const probeEndForCompatibility = source.indexOf("async function waitForCodexProbe", probeStartForCompatibility);
+assert.match(source.slice(probeStartForCompatibility, probeEndForCompatibility),
+  /globalThis\.location\?\.protocol === 'app:'/,
+  "Current Codex app renderers must remain discoverable after shell class changes.");
 assert.match(
   source,
   /finally\s*\{[\s\S]*Promise\.all\(\[\.\.\.sessions\.values\(\)\][\s\S]*removeEarly\(record\)/,

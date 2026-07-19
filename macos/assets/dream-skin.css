@@ -55,6 +55,8 @@
   --ds-task-immersive-edge: rgb(var(--ds-bg-rgb) / .82);
   --ds-task-immersive-mid: rgb(var(--ds-bg-rgb) / .74);
   --ds-task-immersive-far: rgb(var(--ds-bg-rgb) / .60);
+  --dream-art-opacity: .3;
+  --dream-art-shade: rgb(var(--ds-bg-rgb) / calc(1 - var(--dream-art-opacity)));
 }
 
 html.codex-dream-skin[data-dream-shell="light"] {
@@ -285,11 +287,11 @@ html.codex-dream-skin main.main-surface:not(.dream-skin-home-shell)::before {
   background-repeat: no-repeat;
   background-position: center, center, var(--ds-art-position);
   background-size: 100% 100%, 100% 100%, cover;
-  opacity: .78;
+  opacity: calc(.78 * var(--dream-art-opacity));
 }
 
 html.codex-dream-skin[data-dream-shell="light"] main.main-surface:not(.dream-skin-home-shell)::before {
-  opacity: .72;
+  opacity: calc(.72 * var(--dream-art-opacity));
 }
 
 html.codex-dream-skin:is([data-dream-art-wide="true"], [data-dream-art-aspect="wide"], [data-dream-art-aspect="ultrawide"])
@@ -305,7 +307,7 @@ html.codex-dream-skin:is([data-dream-task-mode="ambient"], [data-dream-art-task-
 }
 
 html.codex-dream-skin:is([data-dream-task-mode="ambient"], [data-dream-art-task-mode="ambient"], [data-dream-task-mode="banner"], [data-dream-art-task-mode="banner"])[data-dream-art-wide="true"]:has(main.main-surface:not(.dream-skin-home-shell)) body {
-  background-image: var(--dream-skin-art) !important;
+  background-image: linear-gradient(var(--dream-art-shade), var(--dream-art-shade)), var(--dream-skin-art) !important;
   background-position: var(--ds-art-position) !important;
   background-size: cover !important;
   background-repeat: no-repeat !important;
@@ -569,7 +571,7 @@ html.codex-dream-skin .dream-skin-home {
   border: 1px solid rgb(var(--ds-accent-rgb) / .30) !important;
   border-radius: 22px !important;
   background-color: var(--ds-panel) !important;
-  background-image: var(--dream-skin-art) !important;
+  background-image: linear-gradient(var(--dream-art-shade), var(--dream-art-shade)), var(--dream-skin-art) !important;
   background-repeat: no-repeat !important;
   background-position: var(--ds-art-position) !important;
   background-size: cover !important;
@@ -769,7 +771,7 @@ html.codex-dream-skin .composer-surface-chrome::before { content: none !importan
 /* A wide image can carry the home screen too. The native hero remains live,
    but the artwork is painted once on the window instead of repeated in a card. */
 html.codex-dream-skin[data-dream-art-wide="true"]:has(main.main-surface.dream-skin-home-shell) body {
-  background-image: var(--dream-skin-art) !important;
+  background-image: linear-gradient(var(--dream-art-shade), var(--dream-art-shade)), var(--dream-skin-art) !important;
   background-position: var(--ds-art-position) !important;
   background-size: cover !important;
   background-repeat: no-repeat !important;
