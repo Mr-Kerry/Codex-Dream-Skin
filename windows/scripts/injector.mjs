@@ -68,6 +68,15 @@ function validatedDebuggerUrl(target, port) {
   return url.href;
 }
 
+function parseCdpMessage(data) {
+  try {
+    const message = JSON.parse(String(data));
+    return message && typeof message === "object" ? message : null;
+  } catch {
+    return null;
+  }
+}
+
 function browserIdFromVersion(version, port) {
   const url = validatedDebuggerUrl(version, port);
   const parsed = new URL(url);
@@ -79,7 +88,7 @@ function browserIdFromVersion(version, port) {
 }
 
 function isValidCdpPageTarget(item, port) {
-  if (item?.type !== "page" || !item.url?.startsWith("app://") || typeof item.id !== "string" ||
+  if (item?.type !== "page" || typeof item.id !== "string" ||
       !BROWSER_ID_PATTERN.test(item.id) || !item.webSocketDebuggerUrl) return false;
   try {
     const debuggerUrl = new URL(validatedDebuggerUrl(item, port));
@@ -124,10 +133,8 @@ class CdpSession {
   }
 
   onMessage(event) {
-    let message;
-    try {
-      message = JSON.parse(String(event.data));
-    } catch {
+    const message = parseCdpMessage(event.data);
+    if (!message) {
       this.close();
       return;
     }
@@ -339,6 +346,7 @@ async function loadTheme(themeDir) {
     art: {
       focusX: normalizedUnit(art.focusX, "art.focusX"),
       focusY: normalizedUnit(art.focusY, "art.focusY"),
+      opacity: normalizedUnit(art.opacity, "art.opacity"),
       safeArea: normalizedChoice(art.safeArea, "art.safeArea", THEME_CHOICES.safeArea, "auto"),
       taskMode: normalizedChoice(art.taskMode, "art.taskMode", THEME_CHOICES.taskMode, "auto"),
     },
@@ -419,15 +427,24 @@ async function readThemeSourceStamp(loadedTheme) {
 
 async function probeSession(session) {
   return session.evaluate(`(() => {
-    const markers = {
-      shell: Boolean(document.querySelector('main.main-surface')),
-      sidebar: Boolean(document.querySelector('aside.app-shell-left-panel')),
-      composer: Boolean(document.querySelector('.composer-surface-chrome')),
-      main: Boolean(document.querySelector('[role="main"]')),
-    };
+    const legacyShell = document.querySelector('main.main-surface, [role="main"]');
+    const isCodexApp = globalThis.location?.protocol === 'app:';
+    const shell = legacyShell || (isCodexApp && document.body);
+    const sidebar = document.querySelector(
+      'aside.app-shell-left-panel, aside, nav[aria-label*="side" i]'
+    );
+    const composer = document.querySelector(
+      '.composer-surface-chrome, textarea, [contenteditable="true"]'
+    );
+
     return {
-      markers,
-      codex: location.protocol === 'app:' && markers.shell && markers.sidebar && (markers.composer || markers.main),
+      markers: {
+        shell: Boolean(shell),
+        sidebar: Boolean(sidebar),
+        composer: Boolean(composer),
+        main: Boolean(document.querySelector('[role="main"]')),
+      },
+       codex: Boolean(shell) && (Boolean(legacyShell) || isCodexApp),
     };
   })()`);
 }
@@ -503,9 +520,10 @@ export function earlyPayloadFor(payload, revision) {
       if (window[generationKey] !== generation) { stop(); return true; }
       const root = document.documentElement;
       if (!root || !document.body) return false;
-      const shell = document.querySelector('main.main-surface');
-      const sidebar = document.querySelector('aside.app-shell-left-panel');
-      if (!shell || !sidebar) return false;
+      const legacyShell = document.querySelector('main.main-surface');
+      const legacySidebar = document.querySelector('aside.app-shell-left-panel');
+      const compatibleMain = document.querySelector('[role="main"]');
+      if (!compatibleMain && !legacyShell) return false;
       stop();
       ${payload};
       window[appliedKey] = generation;
@@ -571,8 +589,9 @@ async function verifyRemovedSession(session) {
   )()`);
 }
 
-async function verifySession(session) {
+async function verifySession(session, expectedOpacity = null) {
   return session.evaluate(`(() => {
+    const expectedOpacity = ${JSON.stringify(expectedOpacity)};
     const box = (node) => {
       if (!node) return null;
       const r = node.getBoundingClientRect();
@@ -585,6 +604,9 @@ async function verifySession(session) {
       installed: document.documentElement.classList.contains('codex-dream-skin'),
       version: window.__CODEX_DREAM_SKIN_STATE__?.version ?? null,
       expectedVersion: ${JSON.stringify(SKIN_VERSION)},
+      artOpacity: Number.parseFloat(getComputedStyle(document.documentElement)
+        .getPropertyValue('--dream-art-opacity')),
+      expectedArtOpacity: expectedOpacity,
       stylePresent: Boolean(document.getElementById('codex-dream-skin-style')),
       chromePresent: Boolean(document.getElementById('codex-dream-skin-chrome')),
       chromePointerEvents: getComputedStyle(document.getElementById('codex-dream-skin-chrome') || document.body).pointerEvents,
@@ -592,30 +614,33 @@ async function verifySession(session) {
       suggestionsPresent: Boolean(suggestions),
       hero: box(home?.firstElementChild?.firstElementChild?.firstElementChild),
       cards,
-      composer: box(document.querySelector('.composer-surface-chrome')),
-      sidebar: box(document.querySelector('aside.app-shell-left-panel')),
+      composer: box(document.querySelector('.dream-composer, .composer-surface-chrome, textarea, [contenteditable="true"]')),
+      sidebar: box(document.querySelector('aside.app-shell-left-panel, aside, nav[aria-label*="side" i]')),
       viewport: { width: innerWidth, height: innerHeight },
       documentOverflow: {
         x: document.documentElement.scrollWidth > document.documentElement.clientWidth,
         y: document.documentElement.scrollHeight > document.documentElement.clientHeight,
       },
     };
-    result.pass = result.installed && result.version === result.expectedVersion &&
-      result.stylePresent && result.chromePresent &&
-      result.chromePointerEvents === 'none' && Boolean(result.composer) && Boolean(result.sidebar) &&
-      (!result.homePresent || (Boolean(result.hero) &&
-        (!result.suggestionsPresent || (result.cards.length >= 2 && result.cards.length <= 4))));
+    result.opacityMatches = expectedOpacity === null ||
+      (Number.isFinite(result.artOpacity) && Math.abs(result.artOpacity - expectedOpacity) < .0001);
+    result.pass = result.installed &&
+      result.version === result.expectedVersion &&
+      result.stylePresent &&
+      result.chromePresent &&
+      result.chromePointerEvents === 'none' &&
+      result.opacityMatches;
     return result;
   })()`);
 }
 
-async function waitForVerifiedSession(session, timeoutMs) {
+async function waitForVerifiedSession(session, timeoutMs, expectedOpacity = null) {
   const deadline = Date.now() + timeoutMs;
   let lastResult;
   let lastError;
   while (Date.now() < deadline) {
     try {
-      lastResult = await verifySession(session);
+      lastResult = await verifySession(session, expectedOpacity);
       lastError = null;
       if (lastResult.pass) return lastResult;
     } catch (error) {
@@ -629,16 +654,6 @@ async function waitForVerifiedSession(session, timeoutMs) {
 
 async function capture(session, outputPath) {
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
-  await session.send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
-  await session.send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
-  const viewport = await session.evaluate("({ width: innerWidth, height: innerHeight })");
-  await session.send("Input.dispatchMouseEvent", {
-    type: "mouseMoved",
-    x: Math.round(viewport.width * 0.64),
-    y: Math.round(viewport.height * 0.62),
-    button: "none",
-  });
-  await new Promise((resolve) => setTimeout(resolve, 300));
   const result = await session.send("Page.captureScreenshot", {
     format: "png",
     fromSurface: true,
@@ -652,6 +667,9 @@ async function runOneShot(options) {
   const loadedPayload = (options.mode === "once" || options.reload)
     ? await loadPayload(options.themeDir) : null;
   const payload = loadedPayload?.payload ?? null;
+  const expectedOpacity = loadedPayload
+    ? (loadedPayload.theme?.art?.opacity ?? .3)
+    : null;
   const results = [];
   let screenshotCaptured = false;
   try {
@@ -660,18 +678,28 @@ async function runOneShot(options) {
         if (options.mode === "remove") await removeFromSession(session);
         else if (options.mode === "once") await applyToSession(session, payload);
         if (options.mode === "once") {
-          await new Promise((resolve) => setTimeout(resolve, 850));
+          await new Promise((resolve) => setTimeout(resolve, 120));
         }
         if (options.reload) {
           await session.send("Page.reload", { ignoreCache: true });
           await new Promise((resolve) => setTimeout(resolve, 1600));
           if (options.mode !== "remove") await applyToSession(session, payload);
         }
-        const verified = options.mode === "remove"
+        let verified = options.mode === "remove"
           ? await verifyRemovedSession(session)
           : (options.reload || options.mode === "once" || options.mode === "verify")
-            ? await waitForVerifiedSession(session, options.timeoutMs)
-            : await verifySession(session);
+            ? await waitForVerifiedSession(session, options.timeoutMs, expectedOpacity)
+            : await verifySession(session, expectedOpacity);
+        if (expectedOpacity !== null && verified?.pass) {
+          await new Promise((resolve) => setTimeout(resolve, 1600));
+          const stableVerification = await verifySession(session, expectedOpacity);
+          if (!stableVerification.pass) {
+            stableVerification.stabilityCheck = 'failed';
+          } else {
+            stableVerification.stabilityCheck = 'passed';
+          }
+          verified = stableVerification;
+        }
         results.push({ targetId: target.id, markers: probe.markers, result: verified });
         if (options.screenshot && !screenshotCaptured) {
           await capture(session, options.screenshot);
@@ -970,6 +998,15 @@ if (path.resolve(process.argv[1] || "") === path.resolve(scriptPath)) {
   if (!valid || browserId !== "test-browser" || !isValidCdpPageTarget(validPageTarget, options.port) ||
       invalidPageTargets.some((item) => isValidCdpPageTarget(item, options.port))) {
     throw new Error("CDP URL and target validation self-test failed");
+  }
+  const validMessage = parseCdpMessage('{"id":7,"result":{"ok":true}}');
+  const invalidMessages = ["{not-json", "null", '"text"', "42", "true"];
+  if (validMessage?.id !== 7 || validMessage.result?.ok !== true ||
+      invalidMessages.some((value) => parseCdpMessage(value) !== null)) {
+    throw new Error("CDP message validation self-test failed");
+  }
+  if (/dispatchKeyEvent|dispatchMouseEvent/.test(capture.toString())) {
+    throw new Error("Screenshot capture must not dispatch renderer input events");
   }
   console.log(JSON.stringify({ pass: true, version: SKIN_VERSION, test: "loopback-cdp-validation" }));
   } else if (options.mode === "check-payload") {

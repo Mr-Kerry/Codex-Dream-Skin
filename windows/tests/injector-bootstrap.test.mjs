@@ -49,10 +49,8 @@ vm.runInNewContext(earlyPayloadFor('window.installs.push("guarded")', "guarded")
 assert.deepEqual(guarded.context.window.installs, [], "Auxiliary app targets must remain untouched.");
 guarded.markers.shell = true;
 guarded.observers[0].callback([]);
-assert.deepEqual(guarded.context.window.installs, [], "A main surface without the Codex sidebar is not sufficient.");
-guarded.markers.sidebar = true;
-guarded.observers[0].callback([]);
-assert.deepEqual(guarded.context.window.installs, ["guarded"], "The guarded payload should install once the shell is complete.");
+assert.deepEqual(guarded.context.window.installs, ["guarded"],
+  "A current Codex main surface must remain sufficient when the legacy sidebar is absent.");
 
 const generations = createFixture();
 vm.runInNewContext(earlyPayloadFor('window.installs.push("old")', "old"), generations.context);
@@ -70,13 +68,32 @@ assert.equal(generations.context.window.__CODEX_DREAM_SKIN_EARLY_APPLIED__, "new
 const registrationStart = source.indexOf("earlyScriptId = await registerEarlyPayload");
 const evaluateStart = source.indexOf("await session.evaluate(earlyPayloadFor", registrationStart);
 const probeStart = source.indexOf("const probe = await waitForCodexProbe", registrationStart);
+const probeFunctionStart = source.indexOf("async function probeSession");
+const probeFunctionEnd = source.indexOf("async function waitForCodexProbe", probeFunctionStart);
+const probeSource = source.slice(probeFunctionStart, probeFunctionEnd);
 assert.ok(registrationStart >= 0 && evaluateStart > registrationStart && probeStart > evaluateStart,
   "New targets must register and run the early payload before full shell probing.");
+assert.ok(probeFunctionStart >= 0 && probeFunctionEnd > probeFunctionStart,
+  "The Codex renderer probe must remain discoverable.");
+assert.doesNotMatch(probeSource, /#root/,
+  "An empty application root must not be accepted before the Codex main surface is ready.");
+assert.match(probeSource, /main\.main-surface, \[role="main"\]/,
+  "The renderer probe must wait for a real Codex main surface.");
+assert.match(probeSource, /location\?\.protocol === 'app:'/,
+  "Current Codex app renderers must remain discoverable after shell class changes.");
 assert.match(source, /if \(earlyInjectionFallback\) attachLoadFallback\(/,
   "Load-event reinjection must be attached only when early injection falls back.");
 assert.match(source, /if \(!fallbackTargets\.get\(id\)\) return;/,
   "Fallback listeners must stay inert after a successful early registration.");
 assert.match(source, /Page\.removeScriptToEvaluateOnNewDocument/,
   "Watcher shutdown and theme refresh must unregister persistent Page scripts.");
+assert.match(source, /opacity:\s*normalizedUnit\(art\.opacity, "art\.opacity"\)/,
+  "Theme loading must preserve the tray-controlled background opacity.");
+assert.match(source, /stabilityCheck = 'passed'/,
+  "One-shot opacity refresh must remain stable before the tray reports synchronization.");
+assert.match(source, /Math\.abs\(result\.artOpacity - expectedOpacity\)/,
+  "One-shot verification must compare the rendered opacity with the saved theme value.");
+assert.match(source, /options\.mode === "once"\)[\s\S]*?setTimeout\(resolve, 120\)/,
+  "One-shot opacity application must not retain the old startup delay.");
 
-console.log("PASS: Windows early injection is shell-guarded, generation-safe, ordered before probing, and fallback-scoped.");
+console.log("PASS: Windows early injection waits for the main surface, is generation-safe, ordered before probing, and fallback-scoped.");

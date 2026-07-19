@@ -28,7 +28,15 @@ try {
   $StderrPath = Join-Path $StateRoot 'injector-error.log'
   $VerifyPath = Join-Path $StateRoot 'verify.log'
   $themePaths = Initialize-DreamSkinThemeStore -SkillRoot (Split-Path -Parent $PSScriptRoot) -StateRoot $StateRoot
+  # The launch shortcut is also responsible for restoring the tray controller if it was closed.
+  if (-not (Test-DreamSkinTrayActive)) {
+    $trayScript = Join-Path $PSScriptRoot 'tray-dream-skin.ps1'
+    $powershell = (Get-Command powershell.exe -ErrorAction Stop).Source
+    $trayArguments = "-NoProfile -STA -WindowStyle Hidden -ExecutionPolicy RemoteSigned -File `"$trayScript`" -Port $Port"
+    Start-Process -FilePath $powershell -ArgumentList $trayArguments -WorkingDirectory $PSScriptRoot -WindowStyle Hidden | Out-Null
+  }
   $pauseWasSet = Test-DreamSkinPaused -StateRoot $StateRoot
+  $recordedInjectorStopped = $false
 
   $previousState = Read-DreamSkinState -Path $StatePath
   if (-not $PortExplicit -and $null -ne $previousState -and $previousState.port) {
@@ -95,6 +103,9 @@ try {
     if (-not $restartAuthorized) {
       throw 'Codex is open without a verified Dream Skin CDP endpoint. Close it first or explicitly use -RestartExisting.'
     }
+    # Stop the previous watcher before touching Codex. A failed watcher stop must
+    # never trigger a launch followed by rollback launches.
+    $recordedInjectorStopped = Stop-DreamSkinRecordedInjector -State $previousState
     Stop-DreamSkinCodex -Codex $codexToStop -AllowForce
     $closedExistingCodex = $true
     $codex = $currentCodex
@@ -145,7 +156,9 @@ try {
   }
 
   try {
-    $recordedInjectorStopped = Stop-DreamSkinRecordedInjector -State $previousState
+    if (-not $recordedInjectorStopped) {
+      $recordedInjectorStopped = Stop-DreamSkinRecordedInjector -State $previousState
+    }
     if (-not $recordedInjectorStopped) {
       $staleStatePath = Archive-DreamSkinStateFile -Path $StatePath
       Write-Warning "Archived stale Dream Skin state at $staleStatePath"

@@ -195,6 +195,12 @@ function Install-DreamSkinRuntimeEngine {
       }
     }
 
+    # Unblock only verified managed copies so shortcuts can honor RemoteSigned instead of bypassing policy.
+    foreach ($runtimeScript in Get-ChildItem -LiteralPath (Join-Path $stagingRoot 'scripts') `
+      -Filter '*.ps1' -Recurse -File -Force -ErrorAction Stop) {
+      Unblock-File -LiteralPath $runtimeScript.FullName -ErrorAction Stop
+    }
+
     $hasBackup = $false
     if (Test-Path -LiteralPath $engine.Root) {
       Assert-DreamSkinRuntimeTree -Path $engine.Root
@@ -755,11 +761,17 @@ function Stop-DreamSkinRecordedInjector {
   }
 
   Stop-Process -Id $processId -Force -ErrorAction Stop
-  try { Wait-Process -Id $processId -Timeout 5 -ErrorAction Stop } catch {}
-  if (Get-Process -Id $processId -ErrorAction SilentlyContinue) {
-    throw "The recorded Dream Skin injector did not stop: PID $processId"
+  $deadline = (Get-Date).AddSeconds(20)
+  while ((Get-Date) -lt $deadline) {
+    $remaining = Get-CimInstance Win32_Process -Filter "ProcessId = $processId" -ErrorAction SilentlyContinue
+    if (-not $remaining) { return $true }
+    $remainingStartedAt = Get-DreamSkinProcessStartedAt -ProcessId $processId
+    if ($null -ne $State.injectorStartedAt -and $remainingStartedAt -ne "$($State.injectorStartedAt)") {
+      return $true
+    }
+    Start-Sleep -Milliseconds 250
   }
-  return $true
+  throw "The recorded Dream Skin injector did not stop within 20 seconds: PID $processId"
 }
 
 function Get-DreamSkinCodexProcesses {

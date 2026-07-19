@@ -19,9 +19,30 @@ assert.doesNotMatch(
   /main\.main-surface\s*>\s*header\.app-header-tint\s*\{[^}]*\b(?:position|z-index)\s*:/,
   "The skin must preserve Codex's native fixed header so the side-panel toggle remains reachable.",
 );
+assert.doesNotMatch(
+  css,
+  /\.dream-composer\s*(?:::before)?\s*\{/,
+  "The skin must preserve Codex's native composer geometry and surfaces.",
+);
+assert.doesNotMatch(
+  css,
+  /\.dream-home-utility\s*\{/,
+  "The skin must preserve Codex's native project picker instead of merging it into the composer.",
+);
+assert.match(
+  css,
+  /--dream-art-shade:[^;]*--dream-art-opacity/,
+  "The main background layer must respond to the configured art opacity.",
+);
+assert.match(
+  css,
+  /background-image:\s*linear-gradient\(var\(--dream-art-shade\)/,
+  "Direct main and home backgrounds must include the opacity-controlled shade.",
+);
 
 function createFixture({
   shellPresent,
+  routePresent = true,
   staleSkin = false,
   homePresent = false,
   utilityPresent = false,
@@ -95,6 +116,8 @@ function createFixture({
       return { left: 290, top: 36, width: 990, height: 784 };
     },
   };
+  const shellSidebar = { classList: makeClassList() };
+  const composer = { classList: makeClassList() };
   const routeClasses = new Set();
   const utilityClasses = new Set();
   const utilityNode = { classList: makeClassList(utilityClasses) };
@@ -150,14 +173,15 @@ function createFixture({
     getElementById(id) { return nodes.get(id) ?? null; },
     querySelector(selector) {
       if (selector === "main.main-surface") return hasShell ? shellMain : null;
-      if (selector === "aside.app-shell-left-panel") return hasShell ? {} : null;
+      if (selector === "aside.app-shell-left-panel") return hasShell ? shellSidebar : null;
+      if (selector === ".composer-surface-chrome") return hasShell ? composer : null;
       if (selector === '[role="main"]:has([data-testid="home-icon"])') {
         return hasShell && homePresent ? routeMain : null;
       }
       return null;
     },
     querySelectorAll(selector) {
-      if (selector === '[role="main"]') return hasShell ? [routeMain] : [];
+      if (selector === '[role="main"]') return hasShell && routePresent ? [routeMain] : [];
       if (selector === ".dream-task") return routeClasses.has("dream-task") ? [routeMain] : [];
       if (selector === ".dream-home-utility") {
         return utilityClasses.has("dream-home-utility") ? [utilityNode] : [];
@@ -243,6 +267,12 @@ assert.equal(main.routeClasses.has("dream-task"), true);
 assert.equal(main.context.window.__CODEX_DREAM_SKIN_STATE__.cleanup(), true);
 assert.equal(main.rootClasses.has("codex-dream-skin"), false);
 assert.equal(main.rootClasses.has("dream-theme-dark"), false);
+
+const surfaceOnly = createFixture({ shellPresent: true, routePresent: false });
+const surfaceOnlyResult = vm.runInNewContext(payload, surfaceOnly.context);
+assert.equal(surfaceOnlyResult.installed, true);
+assert.equal(surfaceOnly.rootClasses.has("codex-dream-skin"), true,
+  "Current Codex main surfaces must not be rejected when role=main and the legacy sidebar are absent.");
 assert.equal(main.nodes.has("codex-dream-skin-style"), false);
 assert.equal(main.nodes.has("codex-dream-skin-chrome"), false);
 assert.deepEqual(main.revokedUrls, ["blob:fixture-1"]);
@@ -294,9 +324,7 @@ assert.equal(configured.rootStyles.get("--dream-art-position"), "15% 80%");
 assert.equal(configured.rootStyles.get("--dream-accent"), "#d45a70");
 assert.equal(configured.routeClasses.has("dream-home"), true);
 assert.equal(configured.routeClasses.has("dream-task"), false);
-assert.equal(configured.utilityClasses.has("dream-home-utility"), true);
 assert.equal(configured.context.window.__CODEX_DREAM_SKIN_STATE__.cleanup(), true);
-assert.equal(configured.utilityClasses.has("dream-home-utility"), false);
 
 const analysisPixels = new Uint8ClampedArray(48 * 12 * 4);
 for (let index = 0; index < 48 * 12; index += 1) {

@@ -27,8 +27,8 @@
     "--dream-accent",
     "--dream-accent-ink",
     "--dream-image-luma",
+    "--dream-art-opacity",
   ];
-  const HOME_UTILITY_CLASS = "dream-home-utility";
   const installToken = {};
   let samplingNativeShell = false;
   let observer = null;
@@ -80,6 +80,7 @@
       taskMode,
       focusX: hasNumber(art.focusX) ? clamp(art.focusX) : null,
       focusY: hasNumber(art.focusY) ? clamp(art.focusY) : null,
+      artOpacity: hasNumber(art.opacity) ? clamp(art.opacity) : .3,
       accent: safeAccent,
       initialAspect: Number.isFinite(metadataRatio) && metadataRatio > 0 ? metadataRatio : null,
     };
@@ -282,7 +283,9 @@
     document.querySelectorAll(".dream-home").forEach((node) => node.classList.remove("dream-home"));
     document.querySelectorAll(".dream-task").forEach((node) => node.classList.remove("dream-task"));
     document.querySelectorAll(".dream-home-shell").forEach((node) => node.classList.remove("dream-home-shell"));
-    document.querySelectorAll(`.${HOME_UTILITY_CLASS}`).forEach((node) => node.classList.remove(HOME_UTILITY_CLASS));
+    document.querySelectorAll(".dream-shell-main, .dream-shell-sidebar, .dream-composer").forEach((node) => {
+      node.classList.remove("dream-shell-main", "dream-shell-sidebar", "dream-composer");
+    });
     document.getElementById(STYLE_ID)?.remove();
     document.getElementById(CHROME_ID)?.remove();
   };
@@ -319,6 +322,7 @@
     root.style.setProperty("--dream-accent", accent);
     root.style.setProperty("--dream-accent-ink", accentInk);
     root.style.setProperty("--dream-image-luma", profile.luma.toFixed(3));
+    root.style.setProperty("--dream-art-opacity", String(config.artOpacity));
   };
 
   const ensure = () => {
@@ -328,9 +332,35 @@
 
     const shellMain = document.querySelector("main.main-surface");
     const shellSidebar = document.querySelector("aside.app-shell-left-panel");
-    if (!shellMain || !shellSidebar) {
+    const composer = document.querySelector(".composer-surface-chrome");
+    const routeMains = Array.from(document.querySelectorAll('[role="main"]'));
+    // Recent Codex builds no longer expose the legacy shell classes. The
+    // verified app:// renderer is still a safe host for the fixed skin layer.
+    const hasShell = Boolean(shellMain || shellSidebar || routeMains.length ||
+      (globalThis.location?.protocol === "app:" && document.body));
+    if (!hasShell) {
       clearSkinDom();
       return;
+    }
+    
+    document.querySelectorAll(".dream-shell-main").forEach((node) => {
+      node.classList.remove("dream-shell-main");
+    });
+    document.querySelectorAll(".dream-shell-sidebar").forEach((node) => {
+      node.classList.remove("dream-shell-sidebar");
+    });
+    document.querySelectorAll(".dream-composer").forEach((node) => {
+      node.classList.remove("dream-composer");
+    });
+    
+    if (shellMain) {
+      shellMain.classList.add("dream-shell-main");
+    }
+    if (shellSidebar) {
+      shellSidebar.classList.add("dream-shell-sidebar");
+    }
+    if (shellMain || shellSidebar) {
+      composer?.classList.add("dream-composer");
     }
 
     root.classList.add("codex-dream-skin");
@@ -348,16 +378,11 @@
     }
 
     const home = document.querySelector('[role="main"]:has([data-testid="home-icon"])');
-    for (const candidate of document.querySelectorAll('[role="main"]')) {
-      candidate.classList.toggle("dream-home", candidate === home);
-      candidate.classList.toggle("dream-task", candidate !== home);
+    for (const candidate of routeMains) {
+      candidate.classList.toggle("dream-home", hasShell && candidate === home);
+      candidate.classList.toggle("dream-task", hasShell && candidate !== home);
     }
-    const utilityBars = new Set(home ? home.querySelectorAll('[class*="_homeUtilityBar_"]') : []);
-    for (const candidate of document.querySelectorAll(`.${HOME_UTILITY_CLASS}`)) {
-      if (!utilityBars.has(candidate)) candidate.classList.remove(HOME_UTILITY_CLASS);
-    }
-    for (const candidate of utilityBars) candidate.classList.add(HOME_UTILITY_CLASS);
-    shellMain.classList.toggle("dream-home-shell", Boolean(home));
+    shellMain?.classList.toggle("dream-home-shell", Boolean(home));
 
     let chrome = document.getElementById(CHROME_ID);
     if (!chrome || chrome.parentElement !== document.body) {
@@ -368,6 +393,7 @@
       document.body.appendChild(chrome);
     }
     chrome.classList.toggle("dream-home-shell", Boolean(home));
+    chrome.classList.toggle("dream-compat-overlay", !(shellMain && shellSidebar));
   };
 
   const cleanup = () => {

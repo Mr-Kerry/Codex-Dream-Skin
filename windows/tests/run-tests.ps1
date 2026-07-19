@@ -18,6 +18,12 @@ try {
     Copy-Item -LiteralPath (Join-Path $Root $directoryName) -Destination $runtimeSourceRoot `
       -Recurse -Force -ErrorAction Stop
   }
+  $zoneMarkedSourceScript = Join-Path $runtimeSourceRoot 'scripts\start-dream-skin.ps1'
+  Set-Content -LiteralPath $zoneMarkedSourceScript -Stream 'Zone.Identifier' `
+    -Value "[ZoneTransfer]`r`nZoneId=3`r`n" -Encoding Ascii
+  if (@(Get-Item -LiteralPath $zoneMarkedSourceScript -Stream 'Zone.Identifier').Count -ne 1) {
+    throw 'Runtime test could not create an Internet-zone marker on its source fixture.'
+  }
 
   $engine = Install-DreamSkinRuntimeEngine -SkillRoot $runtimeSourceRoot -StateRoot $runtimeStateRoot
   $sourcePrefix = $runtimeSourceRoot.TrimEnd('\') + '\'
@@ -43,6 +49,10 @@ try {
       (Get-FileHash -Algorithm SHA256 -LiteralPath $installedFile).Hash) {
       throw "Installed runtime hash does not match its source: $relative"
     }
+  }
+  if (@(Get-Item -LiteralPath $engine.Start -Stream 'Zone.Identifier' `
+    -ErrorAction SilentlyContinue).Count -ne 0) {
+    throw 'Installed runtime retained an Internet-zone marker and cannot use RemoteSigned safely.'
   }
 
   [System.IO.File]::WriteAllText((Join-Path $engine.Root 'stale-runtime.txt'), 'stale')
@@ -118,6 +128,16 @@ try {
   }
 
   $installSource = Read-DreamSkinUtf8File -Path (Join-Path $Root 'scripts\install-dream-skin.ps1')
+  $commonSource = Read-DreamSkinUtf8File -Path (Join-Path $Root 'scripts\common-windows.ps1')
+  $hashVerificationIndex = $commonSource.IndexOf(
+    'Staged Dream Skin runtime failed hash verification', [System.StringComparison]::Ordinal
+  )
+  $unblockIndex = $commonSource.IndexOf(
+    'Unblock-File -LiteralPath $runtimeScript.FullName', [System.StringComparison]::Ordinal
+  )
+  if ($hashVerificationIndex -lt 0 -or $unblockIndex -le $hashVerificationIndex) {
+    throw 'Runtime scripts are not unblocked only after staged byte-content verification.'
+  }
   $trayGuardIndex = $installSource.IndexOf('if (Test-DreamSkinTrayActive)', [System.StringComparison]::Ordinal)
   $engineInstallIndex = $installSource.IndexOf('$engine = Install-DreamSkinRuntimeEngine', [System.StringComparison]::Ordinal)
   if ($trayGuardIndex -lt 0 -or $engineInstallIndex -le $trayGuardIndex) {
@@ -134,6 +154,10 @@ try {
     if (-not $installSource.Contains($requiredShortcutBinding)) {
       throw "Installer shortcut still depends on its source checkout: $requiredShortcutBinding"
     }
+  }
+  if ([regex]::Matches($installSource, '-ExecutionPolicy RemoteSigned').Count -ne 4 -or
+    $installSource.Contains('-ExecutionPolicy Bypass')) {
+    throw 'Installer shortcuts or tray launch still bypass the PowerShell execution policy.'
   }
 
   Remove-Item -LiteralPath $runtimeSourceRoot -Recurse -Force
@@ -610,9 +634,18 @@ try {
   }
 
   $themeStateRoot = Join-Path $temporaryRoot 'theme-state'
+  $legacyPresetDirectory = Join-Path $themeStateRoot 'themes\preset-romantic-rose'
+  $customThemeDirectory = Join-Path $themeStateRoot 'themes\custom-keepme'
+  New-Item -ItemType Directory -Force -Path $legacyPresetDirectory, $customThemeDirectory | Out-Null
+  [System.IO.File]::WriteAllText((Join-Path $legacyPresetDirectory 'retired-marker'), 'retired', $utf8NoBom)
+  [System.IO.File]::WriteAllText((Join-Path $customThemeDirectory 'keep-marker'), 'keep', $utf8NoBom)
   $themePaths = Initialize-DreamSkinThemeStore -SkillRoot $Root -StateRoot $themeStateRoot
+  if ((Test-Path -LiteralPath $legacyPresetDirectory) -or
+    -not (Test-Path -LiteralPath (Join-Path $customThemeDirectory 'keep-marker'))) {
+    throw 'Theme-store migration did not retire the old preset ID while preserving custom themes.'
+  }
   $initialTheme = Read-DreamSkinTheme -ThemeDirectory $themePaths.Active
-  if ($initialTheme.Theme.id -cne 'preset-romantic-rose' -or
+  if ($initialTheme.Theme.id -cne 'preset-arina-hashimoto' -or
     $initialTheme.Theme.name -cne '桥本有菜' -or
     $initialTheme.Theme.appearance -cne 'auto' -or
     $initialTheme.Theme.art.safeArea -cne 'left' -or
@@ -622,7 +655,7 @@ try {
   }
   $preseededThemes = @(Get-DreamSkinSavedThemes -StateRoot $themeStateRoot)
   if ($preseededThemes.Count -ne 1 -or
-    $preseededThemes[0].Id -cne 'preset-romantic-rose' -or
+    $preseededThemes[0].Id -cne 'preset-arina-hashimoto' -or
     $preseededThemes[0].Name -cne '桥本有菜') {
     throw 'Arina Hashimoto was not preseeded in the Windows saved-theme menu.'
   }
@@ -710,28 +743,60 @@ try {
   $css = Read-DreamSkinUtf8File -Path (Join-Path $Root 'assets\dream-skin.css')
   foreach ($requiredCss in @(
     'background-image: var(--dream-art)',
-    'main.main-surface > header.app-header-tint',
+    '--dream-art-shade:',
+    '.dream-shell-main > header.app-header-tint',
     '[class~="group/application-menu-top-bar"]',
     '.app-shell-main-content-top-fade',
     '.thread-scroll-container .bg-gradient-to-t.from-token-main-surface-primary',
-    '--dream-immersive-composer',
     'background-position: var(--dream-art-position)',
-    '.dream-home-utility',
-    ':has(.dream-home-utility) .composer-surface-chrome',
-    ':is(.dream-task-ambient, .dream-task-banner):has(main.main-surface:not(.dream-home-shell))'
+    ':is(.dream-task-ambient, .dream-task-banner):has( .dream-shell-main:not(.dream-home-shell))'
   )) {
     if (-not $css.Contains($requiredCss)) { throw "Windows immersive CSS is missing: $requiredCss" }
   }
   $traySource = Read-DreamSkinUtf8File -Path (Join-Path $Root 'scripts\tray-dream-skin.ps1')
+  if (-not $traySource.Contains('Get-DreamSkinOpacityPercent') -or
+      -not $traySource.Contains('[System.Globalization.CultureInfo]::InvariantCulture') -or
+      -not $traySource.Contains('return 30')) {
+    throw 'Tray opacity initialization must convert theme values invariantly and default to 30%.'
+  }
   foreach ($requiredTrayAction in @('System.Windows.Forms.NotifyIcon', '暂停皮肤', '更换背景图', '已保存主题', '完全恢复 Codex')) {
     if (-not $traySource.Contains($requiredTrayAction)) { throw "Tray action is missing: $requiredTrayAction" }
   }
   if (-not $traySource.Contains('$nextPaused') -or -not $traySource.Contains('[System.Windows.Forms.Application]::Exit()')) {
     throw 'Tray pause/restore closures do not terminate cleanly.'
   }
+  if ([regex]::Matches($traySource, '-ExecutionPolicy RemoteSigned').Count -ne 1 -or
+    $traySource.Contains('-ExecutionPolicy Bypass')) {
+    throw 'Tray actions still bypass the PowerShell execution policy.'
+  }
   if (-not $traySource.Contains('Read-DreamSkinTheme -ThemeDirectory $paths.Active -SkipImageMetadata') -or
     -not $traySource.Contains('Get-DreamSkinSavedThemes -StateRoot $StateRoot -SkipImageMetadata')) {
     throw 'Tray menu metadata enumeration still performs full image parsing on every open.'
+  }
+  if (-not $traySource.Contains('CodexDreamSkin.OpacitySlider') -or
+    $traySource.Contains('[System.Windows.Forms.TrackBar]')) {
+    throw 'The tray opacity control regressed to the unstyled native TrackBar.'
+  }
+  if (-not $traySource.Contains('· 已同步') -or -not $traySource.Contains('.HasExited')) {
+    throw 'The tray opacity display no longer distinguishes saved values from confirmed live rendering.'
+  }
+  $opacityHandler = [regex]::Match(
+    $traySource,
+    '\$opacitySlider\.add_ValueChanged\(\{(?s:.*?)\}\.GetNewClosure\(\)\)'
+  )
+  if (-not $opacityHandler.Success -or $opacityHandler.Value.Contains('Write-DreamSkinTheme') -or
+    -not $traySource.Contains('$opacityRefreshTimer.Interval = 140') -or
+    -not $traySource.Contains('Write-DreamSkinOpacity')) {
+    throw 'The tray opacity slider no longer debounces rapid input into one final theme write.'
+  }
+  $failedRefreshIndex = $traySource.IndexOf('if ($exitCode -ne 0)', [System.StringComparison]::Ordinal)
+  $pendingRefreshIndex = $traySource.IndexOf('if ($opacityRefreshState.Pending)', $failedRefreshIndex,
+    [System.StringComparison]::Ordinal)
+  $failureMessageIndex = $traySource.IndexOf("'背景透明度未能同步到当前 Codex 窗口。'", $failedRefreshIndex,
+    [System.StringComparison]::Ordinal)
+  if ($failedRefreshIndex -lt 0 -or $pendingRefreshIndex -le $failedRefreshIndex -or
+    $failureMessageIndex -le $pendingRefreshIndex) {
+    throw 'An obsolete opacity refresh can still report an error before the newest pending value is applied.'
   }
   $restoreSource = Read-DreamSkinUtf8File -Path (Join-Path $Root 'scripts\restore-dream-skin.ps1')
   if (-not $restoreSource.Contains('Stop-DreamSkinTrayProcess')) {
@@ -742,6 +807,10 @@ try {
     throw 'Restore still executes the WindowsApps path instead of activating the registered package.'
   }
   $startSource = Read-DreamSkinUtf8File -Path (Join-Path $Root 'scripts\start-dream-skin.ps1')
+  if (-not $startSource.Contains('if (-not (Test-DreamSkinTrayActive))') -or
+    -not $startSource.Contains("Join-Path `$PSScriptRoot 'tray-dream-skin.ps1'")) {
+    throw 'The main Dream Skin shortcut no longer restores the tray controller when it is absent.'
+  }
   if ($startSource.Contains('Start-Process -FilePath $codex.Executable') -or
     -not $startSource.Contains('Start-DreamSkinCodex -Codex $codex')) {
     throw 'Start still executes the WindowsApps path instead of activating the registered package.'
@@ -749,13 +818,20 @@ try {
   $stateReadIndex = $startSource.IndexOf('$previousState = Read-DreamSkinState', [System.StringComparison]::Ordinal)
   $restartPromptIndex = $startSource.IndexOf('$restartAuthorized = Confirm-DreamSkinRestart', [System.StringComparison]::Ordinal)
   $recordedStopIndex = $startSource.IndexOf('$recordedInjectorStopped = Stop-DreamSkinRecordedInjector', [System.StringComparison]::Ordinal)
+  $codexStopIndex = $startSource.IndexOf('Stop-DreamSkinCodex -Codex $codexToStop', [System.StringComparison]::Ordinal)
   $cancelIndex = $startSource.IndexOf("Write-Host 'Dream Skin launch was cancelled", [System.StringComparison]::Ordinal)
   $pauseClearIndex = $startSource.IndexOf('Set-DreamSkinPaused -Paused $false', [System.StringComparison]::Ordinal)
   if ($stateReadIndex -lt 0 -or $pauseClearIndex -le $stateReadIndex -or
     ($restartPromptIndex -ge 0 -and $pauseClearIndex -le $restartPromptIndex) -or
     ($recordedStopIndex -ge 0 -and $pauseClearIndex -le $recordedStopIndex) -or
+    ($restartPromptIndex -ge 0 -and $recordedStopIndex -le $restartPromptIndex) -or
+    $codexStopIndex -le $recordedStopIndex -or
     ($cancelIndex -ge 0 -and $cancelIndex -ge $pauseClearIndex)) {
     throw 'Start clears the pause marker before state validation or restart consent, or before its cancellation branch.'
+  }
+  if (-not $commonSource.Contains('(Get-Date).AddSeconds(20)') -or
+    -not $commonSource.Contains('$remainingStartedAt -ne "$($State.injectorStartedAt)"')) {
+    throw 'Recorded injector shutdown no longer waits for delayed exit or tolerates safe PID reuse.'
   }
   if (-not $startSource.Contains('$pauseWasSet = Test-DreamSkinPaused') -or
     -not $startSource.Contains('$pauseCleared = $true') -or
@@ -764,12 +840,17 @@ try {
   }
 
   $rendererSource = Read-DreamSkinUtf8File -Path (Join-Path $Root 'assets\renderer-inject.js')
-  foreach ($requiredRendererBehavior in @('dream-home-utility', 'artMetadata', 'detectShellAppearance')) {
+  foreach ($requiredRendererBehavior in @('artMetadata', 'detectShellAppearance')) {
     if (-not $rendererSource.Contains($requiredRendererBehavior)) {
       throw "Renderer adaptive behavior is missing: $requiredRendererBehavior"
     }
   }
   $injectorSource = Read-DreamSkinUtf8File -Path (Join-Path $Root 'scripts\injector.mjs')
+  $defaultTheme = Read-DreamSkinUtf8File -Path (Join-Path $Root 'assets\theme.json') | ConvertFrom-Json
+  if ($null -eq $defaultTheme.art -or $null -eq $defaultTheme.art.opacity -or
+      [double]$defaultTheme.art.opacity -ne 0.3) {
+    throw 'The default Windows theme must persist the same 30% art opacity used by the renderer and tray.'
+  }
   foreach ($requiredInjectorBehavior in @(
     'MAX_ART_BYTES', 'createHash', 'readImageMetadata', '50MP safety limit', 'STRONG_THEME_AUDIT_MS',
     'Page.addScriptToEvaluateOnNewDocument', 'Page.removeScriptToEvaluateOnNewDocument', 'earlyPayloadFor'
